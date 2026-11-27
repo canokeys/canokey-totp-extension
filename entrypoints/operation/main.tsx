@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { t } from '../../lib/i18n';
-import { copyText, send } from '../../lib/messaging';
-import { requestCanoKey } from '../../lib/canokey/webusb';
+import { copyText, openDeviceSettings, send } from '../../lib/messaging';
 import type { CopyResult, Credential, OperationView } from '../../lib/types';
 import '../style.css';
 
@@ -135,10 +134,9 @@ function App() {
         onUnlock={(password) => unlock(view.passwordDeviceId!, password)} />}
       {view.state === 'no-accounts' && <p className="notice" role="status">{t('noCredentials')}</p>}
       {(view.state === 'device-required' || view.state === 'no-accounts') && <div className="actions">
-        {view.state === 'device-required' && <button className="primary" disabled={busy} onClick={() => action(async () => {
-          await requestCanoKey();
-          await send({ type: 'autofill:retry', operationId });
-        })}>{t('authorizeDevice')}</button>}
+        {view.state === 'device-required' && <button className="primary" disabled={busy} onClick={() => {
+          void openDeviceSettings().catch((cause: Error) => setError(cause.message));
+        }}>{t('deviceSettings')}</button>}
         <button disabled={busy} onClick={() => action(() => send({ type: 'autofill:retry', operationId }))}>{t('retry')}</button>
       </div>}
       {['calculating', 'touch-required'].includes(view.state) && <div className="notice" role="status">

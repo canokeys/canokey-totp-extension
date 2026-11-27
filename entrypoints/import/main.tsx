@@ -2,11 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { wipe } from '../../lib/bytes';
 import { t } from '../../lib/i18n';
-import { send } from '../../lib/messaging';
+import { DEVICE_AUTHORIZED_CHANNEL, openDeviceSettings, send } from '../../lib/messaging';
 import { encodeBase32, parseOtpAuth } from '../../lib/otpauth';
 import { tabOrigin } from '../../lib/origin';
-import { requestCanoKey } from '../../lib/canokey/webusb';
-import type { AutofillTarget, DeviceInfo, DeviceStatus, ImportResult, TotpDraft } from '../../lib/types';
+import type { AutofillTarget, DeviceStatus, ImportResult, TotpDraft } from '../../lib/types';
 import '../style.css';
 
 const params = new URLSearchParams(location.search);
@@ -15,7 +14,7 @@ const targetOrigin = tabOrigin(params.get('origin') ?? undefined);
 const emptyDraft = { issuer: '', account: '', secret: '', algorithm: 'SHA1' as TotpDraft['algorithm'], digits: 6, period: 30 };
 
 function App() {
-  const [devices, setDevices] = useState<DeviceInfo[]>([]);
+  const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>();
   const [deviceId, setDeviceId] = useState('');
   const [source, setSource] = useState<'qr' | 'uri' | 'manual'>(targetOrigin ? 'qr' : 'manual');
   const [uri, setUri] = useState('');
@@ -27,19 +26,23 @@ function App() {
   const [imported, setImported] = useState<ImportResult>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-
-  async function loadDevices() {
-    const status = await send<DeviceStatus>({ type: 'device:list' });
-    setDevices(status.devices);
-    setDeviceId((current) => status.devices.some((device) => device.id === current) ? current : status.devices[0]?.id ?? '');
-  }
+  const devices = deviceStatus?.devices ?? [];
 
   useEffect(() => {
-    void loadDevices().catch((cause: Error) => setError(cause.message));
+    function refreshDevices() {
+      void send<DeviceStatus>({ type: 'device:list' }).then((status) => {
+        setDeviceStatus(status);
+        setDeviceId((current) => status.devices.some((device) => device.id === current) ? current : status.devices[0]?.id ?? '');
+      }).catch((cause: Error) => setError(cause.message));
+    }
+    const channel = new BroadcastChannel(DEVICE_AUTHORIZED_CHANNEL);
+    channel.addEventListener('message', refreshDevices);
+    refreshDevices();
     if (targetTab && targetOrigin) {
       void send<AutofillTarget | undefined>({ type: 'import:target', tabId: targetTab, expectedOrigin: targetOrigin })
         .then(setFillTarget).catch(() => undefined);
     }
+    return () => channel.close();
   }, []);
 
   function readUri(value: string) {
@@ -143,9 +146,9 @@ function App() {
             <option value="">—</option>{devices.map((device) => <option value={device.id} key={device.id}>{device.productName} · {device.serial}</option>)}
           </select></label>
         </div>
-        {!devices.length && <button type="button" onClick={() => {
-          void requestCanoKey().then(loadDevices).catch((cause: Error) => setError(cause.message));
-        }}>{t('authorizeDevice')}</button>}
+        {deviceStatus?.devices.length === 0 && <button type="button" disabled={busy} onClick={() => {
+          void openDeviceSettings().catch((cause: Error) => setError(cause.message));
+        }}>{t('deviceSettings')}</button>}
         <label className="check"><input type="checkbox" checked={touch} onChange={(event) => setTouch(event.target.checked)} />{t('touchProtection')}</label>
         {pendingAction ? <>
           <label>{t('password')}<input autoFocus type="password" required autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} /></label>

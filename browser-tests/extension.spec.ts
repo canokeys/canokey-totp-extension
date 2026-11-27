@@ -69,7 +69,6 @@ async function installMockDevice(worker: Worker): Promise<void> {
     };
     Object.defineProperty(navigator, 'usb', { configurable: true, value: {
       async getDevices() { return [device]; },
-      async requestDevice() { return device; },
       addEventListener() {},
       setAccounts(accounts: string[]) { names = accounts; },
     } });
@@ -175,39 +174,18 @@ test('an empty CanoKey shows an empty account list and retry reads it again', as
   await expect(target.locator('input')).toHaveValue('000042', { timeout: 10_000 });
 });
 
-test('one popup permission request covers mapped websites across tabs', async () => {
-  const requests: string[][] = [];
-  // The browser's confirmation dialog is outside the page surface.
-  await context.exposeFunction('testWebsitePermission', (method: 'contains' | 'request', origins: string[]) => {
-    if (method === 'request') requests.push(origins);
-    return requests.some((granted) => origins.every((origin) => granted.includes(origin)));
-  });
-  await context.addInitScript(() => {
-    if (location.protocol !== 'chrome-extension:' || location.pathname !== '/popup.html') return;
-    const website = new URLSearchParams(location.search).get('website');
-    const checkPermission = Reflect.get(window, 'testWebsitePermission') as (method: string, origins: string[]) => Promise<boolean>;
-    Object.defineProperty(chrome.tabs, 'query', { value: async () => [{ id: 1, url: website }] });
-    Object.defineProperty(chrome.permissions, 'contains', { value: ({ origins }: chrome.permissions.Permissions) => checkPermission('contains', origins ?? []) });
-    Object.defineProperty(chrome.permissions, 'request', { value: ({ origins }: chrome.permissions.Permissions) => checkPermission('request', origins ?? []) });
-  });
-
+test('website access controls are available in Settings', async () => {
   const worker = context.serviceWorkers()[0]!;
   const popup = await context.newPage();
-  const popupUrl = new URL('popup.html', worker.url());
-  popupUrl.searchParams.set('website', 'https://github.com');
-  await popup.goto(popupUrl.href);
-  const enable = popup.getByRole('button', { name: 'Show C on all mapped websites' });
-  await expect(enable).toHaveAccessibleDescription('Your browser will request access to all HTTPS websites.');
-  expect(requests).toEqual([]);
-  await enable.click();
-  await expect(enable).toHaveCount(0);
+  await popup.goto(new URL('popup.html', worker.url()).href);
+  await expect(popup.getByRole('button', { name: 'Show C on all mapped websites' })).toHaveCount(0);
 
-  popupUrl.searchParams.set('website', 'https://app.fastmail.com');
-  await popup.goto(popupUrl.href);
-  await expect(popup.getByRole('button', { name: 'Refresh' })).toBeEnabled();
-  await expect(enable).toHaveCount(0);
-  expect(requests).toEqual([['https://*/*']]);
-  expect(await worker.evaluate(() => chrome.storage.local.get(null))).toEqual({});
+  const openingSettings = context.waitForEvent('page', (page) => page.url().endsWith('/options.html'));
+  await popup.getByRole('button', { name: 'Settings', exact: true }).click();
+  const options = await openingSettings;
+  const websiteButtons = options.getByRole('region', { name: 'Webpage fill button' });
+  await expect(websiteButtons.getByRole('button', { name: 'Show C on all mapped websites' }))
+    .toHaveAccessibleDescription('Your browser will request access to all HTTPS websites.');
 });
 
 test('the webpage button fills a labelled numeric code field once it has a permitted mapping', async () => {

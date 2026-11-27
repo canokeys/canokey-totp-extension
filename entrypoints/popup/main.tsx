@@ -1,13 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { requestCanoKey } from '../../lib/canokey/webusb';
-import { activeTab, copyText, send } from '../../lib/messaging';
-import { DEFAULT_MAPPINGS, HTTPS_HOST_PATTERN, matchingCredentials, tabOrigin } from '../../lib/origin';
+import { activeTab, copyText, openDeviceSettings, send } from '../../lib/messaging';
+import { DEFAULT_MAPPINGS, matchingCredentials, tabOrigin } from '../../lib/origin';
 import { t } from '../../lib/i18n';
 import type { CopyResult, Credential, DeviceStatus, IssuerMapping, OperationView } from '../../lib/types';
 import '../style.css';
-
-const webpageAccess: chrome.permissions.Permissions = { origins: [HTTPS_HOST_PATTERN] };
 
 function App() {
   const [status, setStatus] = useState<DeviceStatus>();
@@ -18,7 +15,6 @@ function App() {
   const [query, setQuery] = useState('');
   const [password, setPassword] = useState('');
   const [locked, setLocked] = useState<string[]>([]);
-  const [webpageAccessGranted, setWebpageAccessGranted] = useState<boolean>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -32,14 +28,12 @@ function App() {
     setError('');
     passwords.current.clear();
     try {
-      const [current, deviceStatus, custom, accessGranted] = await Promise.all([
+      const [current, deviceStatus, custom] = await Promise.all([
         activeTab(), send<DeviceStatus>({ type: 'device:list' }), send<IssuerMapping[]>({ type: 'mapping:list' }),
-        chrome.permissions.contains(webpageAccess),
       ]);
       setTab(current);
       setStatus(deviceStatus);
       setMappings([...DEFAULT_MAPPINGS, ...custom]);
-      setWebpageAccessGranted(accessGranted);
       const all: Credential[] = [];
       const lockedDevices: string[] = [];
       for (const device of deviceStatus.devices) {
@@ -70,29 +64,6 @@ function App() {
   const filtered = credentials.filter((credential) => `${credential.issuer ?? ''} ${credential.account}`.toLowerCase().includes(search));
   const matching = origin ? matchingCredentials(filtered, origin, mappings) : [];
   const others = filtered.filter((credential) => !matching.includes(credential));
-
-  async function enableButton() {
-    setError('');
-    setBusy(true);
-    try {
-      const granted = await chrome.permissions.request(webpageAccess);
-      setWebpageAccessGranted(granted);
-      if (!granted) setError(t('sitePermissionDenied'));
-    } catch (cause) {
-      setError((cause as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function authorizeDevice() {
-    try {
-      await requestCanoKey();
-      await load();
-    } catch (cause) {
-      setError((cause as Error).message);
-    }
-  }
 
   async function openImporter() {
     const params = new URLSearchParams();
@@ -168,12 +139,6 @@ function App() {
     <section className="section">
       <h2 className="section-title">{t('currentSite')}</h2>
       <div className="origin">{origin ?? t(tab ? 'noHttpsSite' : 'loading')}</div>
-      {webpageAccessGranted === false && origin && mappings.some((mapping) => mapping.origin === origin) && <>
-        <button className="site-action" disabled={busy || loading} aria-describedby="webpage-access-scope" onClick={enableButton}>
-          {t('enableWebpageButtons')}
-        </button>
-        <p id="webpage-access-scope" className="muted">{t('webpageAccessScope')}</p>
-      </>}
     </section>
     <div className="section">
       <div className="status" role="status">
@@ -183,7 +148,9 @@ function App() {
         </>}
       </div>
       {!loading && unavailableCount > 0 && <p className="muted">{t('deviceUnavailableHelp')}</p>}
-      {!loading && status?.authorizedCount === 0 && <button className="site-action" onClick={authorizeDevice}>{t('connect')}</button>}
+      {!loading && status?.authorizedCount === 0 && <button className="site-action" onClick={() => {
+        void openDeviceSettings().catch((cause: Error) => setError(cause.message));
+      }}>{t('deviceSettings')}</button>}
       {locked.map((id) => <form className="section stack" key={id} onSubmit={(event) => { event.preventDefault(); void unlock(id); }}>
         <label>{t('password')} · {id}<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
         <button disabled={busy || loading || !password}>{t('unlock')}</button>

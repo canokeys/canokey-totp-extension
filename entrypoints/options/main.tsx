@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { requestCanoKey } from '../../lib/canokey/webusb';
+import { CANOKEY_USB_FILTER } from '../../lib/canokey/webusb';
 import { errorMessage } from '../../lib/errors';
 import { t, uiLanguage } from '../../lib/i18n';
-import { send } from '../../lib/messaging';
-import { DEFAULT_MAPPINGS } from '../../lib/origin';
+import { DEVICE_AUTHORIZED_CHANNEL, send } from '../../lib/messaging';
+import { DEFAULT_MAPPINGS, HTTPS_HOST_PATTERN } from '../../lib/origin';
 import type { DeviceStatus, IssuerMapping } from '../../lib/types';
 import './style.css';
+
+const webpageAccess: chrome.permissions.Permissions = { origins: [HTTPS_HOST_PATTERN] };
 
 function App() {
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>();
@@ -15,9 +17,13 @@ function App() {
   const [issuer, setIssuer] = useState('');
   const [origin, setOrigin] = useState('');
   const [loading, setLoading] = useState(true);
+  const [choosingDevice, setChoosingDevice] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deviceError, setDeviceError] = useState('');
   const [mappingError, setMappingError] = useState('');
+  const [websiteAccess, setWebsiteAccess] = useState<boolean>();
+  const [requestingWebsiteAccess, setRequestingWebsiteAccess] = useState(false);
+  const [websiteAccessError, setWebsiteAccessError] = useState('');
 
   const loadDevices = useCallback(async () => {
     setLoading(true);
@@ -37,12 +43,50 @@ function App() {
     void send<IssuerMapping[]>({ type: 'mapping:list' }).then(setMappings).catch(() => setMappingError(t('settingsLoadError')));
   }, [loadDevices]);
 
+  useEffect(() => {
+    const readWebsiteAccess = () => {
+      void chrome.permissions.contains(webpageAccess).then((granted) => {
+        setWebsiteAccess(granted);
+        setWebsiteAccessError('');
+      }).catch(() => setWebsiteAccessError(t('settingsLoadError')));
+    };
+    readWebsiteAccess();
+    chrome.permissions.onAdded.addListener(readWebsiteAccess);
+    chrome.permissions.onRemoved.addListener(readWebsiteAccess);
+    return () => {
+      chrome.permissions.onAdded.removeListener(readWebsiteAccess);
+      chrome.permissions.onRemoved.removeListener(readWebsiteAccess);
+    };
+  }, []);
+
   async function authorize() {
+    setDeviceError('');
+    setChoosingDevice(true);
     try {
-      await requestCanoKey();
+      if (!navigator.usb) throw new Error(t('webUsbUnsupported'));
+      await navigator.usb.requestDevice({ filters: [CANOKEY_USB_FILTER] });
+      const channel = new BroadcastChannel(DEVICE_AUTHORIZED_CHANNEL);
+      channel.postMessage(null);
+      channel.close();
       await loadDevices();
     } catch (error) {
       setDeviceError(errorMessage(error));
+    } finally {
+      setChoosingDevice(false);
+    }
+  }
+
+  async function authorizeWebsites() {
+    setWebsiteAccessError('');
+    setRequestingWebsiteAccess(true);
+    try {
+      const granted = await chrome.permissions.request(webpageAccess);
+      setWebsiteAccess(granted);
+      if (!granted) setWebsiteAccessError(t('sitePermissionDenied'));
+    } catch (error) {
+      setWebsiteAccessError(errorMessage(error));
+    } finally {
+      setRequestingWebsiteAccess(false);
     }
   }
 
@@ -72,6 +116,7 @@ function App() {
       <div className="settings-brand"><span className="settings-mark" aria-hidden="true">C</span>{t('appName')}</div>
       <nav aria-label={t('settingsNavigation')}>
         <a href="#devices">{t('devices')}</a>
+        <a href="#webpage-buttons">{t('webpageButtons')}</a>
         <a href="#mappings">{t('issuerMappings')}</a>
       </nav>
     </aside>
@@ -80,7 +125,7 @@ function App() {
       <section id="devices" className="settings-panel" aria-labelledby="heading-devices">
         <header className="panel-heading">
           <h2 id="heading-devices">{t('devices')}</h2>
-          <button className="button" disabled={loading} onClick={loadDevices}>{t('refresh')}</button>
+          <button className="button" disabled={loading || choosingDevice} onClick={loadDevices}>{t('refresh')}</button>
         </header>
         {deviceError && <p className="feedback error" role="alert">{deviceError}</p>}
         {loading && <p>{t('checkingDevices')}</p>}
@@ -91,7 +136,20 @@ function App() {
             <dl className="device-details"><div><dt>{t('serial')}</dt><dd>{device.serial}</dd></div><div><dt>{t('firmware')}</dt><dd>{device.firmware}</dd></div></dl>
           </li>)}
         </ul>}
-        <button className="button" onClick={authorize}>{t('authorizeDevice')}</button>
+        <button className="button" disabled={loading || choosingDevice} onClick={authorize}>{t('authorizeDevice')}</button>
+      </section>
+
+      <section id="webpage-buttons" className="settings-panel" aria-labelledby="heading-webpage-buttons">
+        <header className="panel-heading">
+          <div>
+            <h2 id="heading-webpage-buttons">{t('webpageButtons')}</h2>
+            {websiteAccess === true && <p role="status">{t('webpageButtonsEnabled')}</p>}
+            {websiteAccess === false && <p id="webpage-access-scope">{t('webpageAccessScope')}</p>}
+          </div>
+        </header>
+        {websiteAccess === false && <button className="button" disabled={requestingWebsiteAccess}
+          aria-describedby="webpage-access-scope" onClick={authorizeWebsites}>{t('enableWebpageButtons')}</button>}
+        {websiteAccessError && <p className="feedback error" role="alert">{websiteAccessError}</p>}
       </section>
 
       <section id="mappings" className="settings-panel" aria-labelledby="heading-mappings">

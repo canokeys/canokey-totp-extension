@@ -104,11 +104,6 @@ export class WebUsbTransport implements ApduTransport {
   }
 }
 
-export async function requestCanoKey(): Promise<USBDevice> {
-  if (!navigator.usb) throw new AppError('WEBUSB_UNSUPPORTED', 'This browser does not support WebUSB.');
-  return navigator.usb.requestDevice({ filters: [CANOKEY_USB_FILTER] });
-}
-
 export async function authorizedCanoKeys(): Promise<USBDevice[]> {
   if (!navigator.usb) return [];
   return (await navigator.usb.getDevices()).filter((device) => device.vendorId === CANOKEY_USB_FILTER.vendorId && device.productId === CANOKEY_USB_FILTER.productId);
