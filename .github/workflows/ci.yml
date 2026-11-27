@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.85.1
+          targets: wasm32-unknown-unknown
+      - run: npm ci
+      - run: bash scripts/build-wasm.sh
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npx wxt build
+      - run: xvfb-run -a npm run test:browser
+      - run: npx wxt zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: canokey-totp-chromium
+          path: .output/*.zip
+          if-no-files-found: error

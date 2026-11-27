@@ -1,0 +1,10 @@
+node_modules/
+.output/
+.wxt/
+dist/
+target/
+playwright-report/
+test-results/
+public/wasm/canokey.wasm
+*.zip
+.DS_Store

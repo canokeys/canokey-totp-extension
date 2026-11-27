@@ -1,0 +1,41 @@
+{
+  "name": "canokey-browser-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "npm run wasm && wxt",
+    "build": "npm run wasm && wxt build",
+    "zip": "npm run build && wxt zip",
+    "wasm": "bash scripts/build-wasm.sh",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build"
+  },
+  "dependencies": {
+    "jsqr": "1.4.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.4",
+    "@playwright/test": "1.65.1",
+    "@types/chrome": "0.1.37",
+    "@types/node": "22.15.3",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@wxt-dev/module-react": "1.2.2",
+    "eslint": "9.39.4",
+    "eslint-plugin-react-hooks": "7.0.1",
+    "jsdom": "31.0.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.56.1",
+    "vitest": "5.1.2",
+    "wxt": "0.21.5"
+  }
+}
