@@ -33,4 +33,5 @@ jobs:
         with:
           name: canokey-totp-chromium
           path: .output/*.zip
+          include-hidden-files: true
           if-no-files-found: error
