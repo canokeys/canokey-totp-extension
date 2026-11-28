@@ -4,18 +4,18 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.12.0"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
     "dev": "npm run wasm && wxt",
     "build": "npm run wasm && wxt build",
     "zip": "npm run build && wxt zip",
     "wasm": "bash scripts/build-wasm.sh",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "wxt prepare && tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
     "test:browser": "playwright test",
-    "check": "npm run typecheck && npm run lint && npm run test && npm run build"
+    "check": "npm run typecheck && npm run lint && npm run build && npm run test"
   },
   "dependencies": {
     "jsqr": "1.4.0",
